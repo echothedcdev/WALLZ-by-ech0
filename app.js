@@ -1,0 +1,33 @@
+// WALLZ by ECH0. Add the Supabase project URL and publishable/anon key when ready.
+const SUPABASE_URL = "YOUR_SUPABASE_URL";
+const SUPABASE_KEY = "YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY";
+const ready = SUPABASE_URL.startsWith("https://") && !SUPABASE_URL.includes("YOUR_") && !SUPABASE_KEY.includes("YOUR_");
+const db = ready ? window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY) : null;
+const el=id=>document.getElementById(id);
+const screens=["auth","lobby","game"];
+const screen=id=>screens.forEach(s=>el(s).classList.toggle("hidden",s!==id));
+const note=(id,msg)=>el(id).textContent=msg||"";
+const toast=msg=>{el("toast").textContent=msg;el("toast").classList.add("show");setTimeout(()=>el("toast").classList.remove("show"),2200)};
+let user=null,name="PLAYER",mode="signin",channel=null,code=null,slot=0,other=null;
+let state={pawns:[{x:4,y:0},{x:4,y:8}],turn:0,walls:[10,10],winner:null};
+function preview(){for(let i=0;i<81;i++){let c=document.createElement("i");c.className="preview-cell"+(i===36?" cyan":i===44?" orange":"");el("preview-grid").append(c)}}
+function draw(){let b=el("board");b.innerHTML="";for(let y=0;y<9;y++)for(let x=0;x<9;x++){let c=document.createElement("button");c.className="cell";c.type="button";c.setAttribute("role","gridcell");for(let p=0;p<2;p++)if(state.pawns[p].x===x&&state.pawns[p].y===y){let d=document.createElement("i");d.className="pawn "+(p===0?"cyan":"orange");c.append(d)}c.disabled=!channel||state.turn!==slot||!!state.winner;c.addEventListener("click",()=>move(x,y));b.append(c)}el("walls0").textContent=state.walls[0];el("walls1").textContent=state.walls[1];el("turn-label").textContent=state.winner!==null?(state.winner===slot?"YOU WON!":"YOU LOST"):state.turn===slot?"YOUR TURN":"OPPONENT'S TURN";el("turn-help").textContent=state.winner!==null?"Match complete.":state.turn===slot?"Choose an adjacent square.":"Waiting for your opponent.";el("p0").classList.toggle("active",state.turn===0);el("p1").classList.toggle("active",state.turn===1)}
+function showLobby(){el("username").textContent=name;screen("lobby")}
+async function authGuest(){if(!db){note("auth-notice","Supabase connection isn't configured yet. The UI is in place; we'll connect it next.");return}let r=await db.auth.signInAnonymously();if(r.error){note("auth-notice",r.error.message);return}user=r.data.user;name="GUEST-"+user.id.slice(0,4).toUpperCase();showLobby()}
+el("auth-form").addEventListener("submit",async e=>{e.preventDefault();if(!db){note("auth-notice","Supabase connection isn't configured yet.");return}let email=el("email").value.trim(),password=el("password").value;if(!email||!password){note("auth-notice","Enter your email and password.");return}let r=mode==="signup"?await db.auth.signUp({email,password}):await db.auth.signInWithPassword({email,password});if(r.error){note("auth-notice",r.error.message);return}if(!r.data.session){note("auth-notice","Check your email to confirm your account, then sign in.");return}user=r.data.user;name=email.split("@")[0].toUpperCase().slice(0,16);showLobby()});
+el("guest").onclick=authGuest;
+el("switch-auth").onclick=()=>{mode=mode==="signin"?"signup":"signin";el("auth-heading").textContent=mode==="signup"?"Create your account":"Ready to play?";el("auth-submit").textContent=mode==="signup"?"CREATE ACCOUNT ↗":"SIGN IN ↗";el("switch-label").textContent=mode==="signup"?"Already registered?":"New here?";el("switch-auth").textContent=mode==="signup"?"Sign in":"Create account"};
+function newCode(){let s="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",v="";for(let i=0;i<6;i++)v+=s[Math.floor(Math.random()*s.length)];return v}
+async function openRoom(room,host){if(!db||!user){note("lobby-notice","Connect Supabase and sign in first.");return}if(channel)await db.removeChannel(channel);code=room;slot=host?0:1;state={pawns:[{x:4,y:0},{x:4,y:8}],turn:0,walls:[10,10],winner:null};el("room-code").textContent=code;el("invite-code").textContent=code;el("name0").textContent=host?name:"OPPONENT";el("name1").textContent=host?"WAITING...":name;screen("game");channel=db.channel("wallz-"+code,{config:{presence:{key:user.id}}});channel.on("broadcast",{event:"state"},msg=>{if(msg.payload&&msg.payload.state){state=msg.payload.state;draw()}});channel.on("broadcast",{event:"request"},()=>{if(host)publish()});channel.on("presence",{event:"sync"},()=>{let peers=Object.values(channel.presenceState()).flat().filter(p=>p.user_id!==user.id);other=peers[0]||null;el("room-status").textContent=other?"Opponent connected.":"Waiting for your friend...";el("name"+(host?1:0)).textContent=other?(host?other.name:name):"WAITING...";if(host&&other)publish()});channel.subscribe(async status=>{if(status==="SUBSCRIBED"){await channel.track({user_id:user.id,name:name,slot:slot});el("room-status").textContent="Realtime connected.";draw();if(!host)channel.send({type:"broadcast",event:"request",payload:{}})}else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT")el("room-status").textContent="Realtime connection error. Check Supabase settings."})}
+async function publish(){if(channel)await channel.send({type:"broadcast",event:"state",payload:{state:state}})}
+function move(x,y){if(!channel||state.turn!==slot||state.winner!==null)return;let p=state.pawns[slot],q=state.pawns[1-slot];if(Math.abs(p.x-x)+Math.abs(p.y-y)!==1){toast("Move one square at a time.");return}if(q.x===x&&q.y===y){toast("That square is occupied.");return}state.pawns[slot]={x:x,y:y};if((slot===0&&y===8)||(slot===1&&y===0))state.winner=slot;else state.turn=1-slot;draw();publish()}
+el("create-room").onclick=()=>{if(!db){note("lobby-notice","Supabase connection will be added next.");return}openRoom(newCode(),true)};
+el("join-form").addEventListener("submit",e=>{e.preventDefault();let c=el("room-input").value.trim().toUpperCase();if(c.length!==6){note("lobby-notice","Enter a 6-character room code.");return}openRoom(c,false)});
+async function copy(){if(!code)return;try{await navigator.clipboard.writeText(code);toast("Room code copied")}catch(e){toast("Room code: "+code)}}
+el("copy-code").onclick=copy;el("copy-invite").onclick=copy;
+el("leave").onclick=async()=>{if(channel){await db.removeChannel(channel);channel=null}screen("lobby")};
+el("logout").onclick=async()=>{if(db)await db.auth.signOut();user=null;screen("auth")};
+el("profile").onclick=()=>{if(user)toast(name)};
+el("wall-mode").onclick=()=>toast("Wall placement is next on the build list.");
+preview();draw();
+if(db){db.auth.getSession().then(({data})=>{if(data.session){user=data.session.user;name=user.is_anonymous?"GUEST-"+user.id.slice(0,4).toUpperCase():(user.email||"PLAYER").split("@")[0].toUpperCase();showLobby()}})}
