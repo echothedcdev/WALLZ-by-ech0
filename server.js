@@ -31,6 +31,7 @@ const transporter = nodemailer.createTransport({
 const sends = new Map();
 function rateLimited(userId) {
   const now = Date.now();
+  for (const [key, value] of sends) if (now - value.startedAt > 15 * 60 * 1000) sends.delete(key);
   const entry = sends.get(userId);
   if (!entry || now - entry.startedAt > 15 * 60 * 1000) {
     sends.set(userId, { startedAt: now, count: 1 });
@@ -64,6 +65,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") return reply(res, 200, { ok: true }, origin);
   if (req.method !== "POST" || req.url !== "/api/email/test") return reply(res, 404, { error: "Not found." }, origin);
 
+  req.resume();
   try {
     const authHeader = req.headers.authorization || "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
