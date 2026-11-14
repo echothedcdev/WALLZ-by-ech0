@@ -1,0 +1,12 @@
+{
+  "name": "wallz-by-ech0-mail-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.0",
+    "nodemailer": "10.5.0"
+  }
+}
