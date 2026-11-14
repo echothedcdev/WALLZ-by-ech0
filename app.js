@@ -1,6 +1,8 @@
-// WALLZ by ECH0. Add the Supabase project URL and publishable/anon key when ready.
-const SUPABASE_URL = "YOUR_SUPABASE_URL";
-const SUPABASE_KEY = "YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY";
+// WALLZ by ECH0 — browser config. These are public setup values, not secrets.
+const SUPABASE_URL = "https://wdkpojqtftvpfeuctlzi.supabase.co";
+const SUPABASE_KEY = "sb_publishable_qVM5jLTvDgZjFhiDqc5Wqw_VxfrvtHy";
+const MAIL_API_URL = "https://YOUR-WALLZ-API.up.railway.app";
+
 const ready = SUPABASE_URL.startsWith("https://") && !SUPABASE_URL.includes("YOUR_") && !SUPABASE_KEY.includes("YOUR_");
 const db = ready ? window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY) : null;
 const el=id=>document.getElementById(id);
@@ -29,5 +31,27 @@ el("leave").onclick=async()=>{if(channel){await db.removeChannel(channel);channe
 el("logout").onclick=async()=>{if(db)await db.auth.signOut();user=null;screen("auth")};
 el("profile").onclick=()=>{if(user)toast(name)};
 el("wall-mode").onclick=()=>toast("Wall placement is next on the build list.");
+
+el("send-test-email").onclick=async()=>{
+  const button=el("send-test-email");
+  if(!db){note("lobby-notice","Supabase is not configured.");return}
+  if(!MAIL_API_URL.startsWith("https://")||MAIL_API_URL.includes("YOUR-")){
+    note("lobby-notice","Set MAIL_API_URL in app.js after deploying the WALLZ mail server.");return;
+  }
+  const {data:{session}}=await db.auth.getSession();
+  if(!session?.access_token){note("lobby-notice","Sign in with an email account first. Guest accounts cannot receive email.");return}
+  button.disabled=true;button.textContent="SENDING...";
+  try{
+    const response=await fetch(MAIL_API_URL.replace(/\/$/,"")+"/api/email/test",{
+      method:"POST",headers:{Authorization:"Bearer "+session.access_token,"Content-Type":"application/json"},body:"{}"
+    });
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(result.error||"Email could not be sent.");
+    note("lobby-notice","Test email sent to your confirmed account email.");
+    toast("Mailtrap test email sent!");
+  }catch(error){note("lobby-notice",error.message||"Email service unavailable.");}
+  finally{button.disabled=false;button.textContent="SEND TEST EMAIL ↗";}
+};
+
 preview();draw();
 if(db){db.auth.getSession().then(({data})=>{if(data.session){user=data.session.user;name=user.is_anonymous?"GUEST-"+user.id.slice(0,4).toUpperCase():(user.email||"PLAYER").split("@")[0].toUpperCase();showLobby()}})}
